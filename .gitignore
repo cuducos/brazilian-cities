@@ -1,0 +1,4 @@
+*.csv
+*.json
+*.pyc
+__pycache__/
