@@ -1,3 +1,4 @@
+import re
 from csv import DictWriter
 from json import dump
 from urllib.request import urlopen
@@ -5,6 +6,8 @@ from urllib.request import urlopen
 from bs4 import BeautifulSoup
 
 BASE_URL = 'http://cidades.ibge.gov.br'
+RE_CODE_UF = re.compile('coduf=(\d+)')
+RE_CODE_CITY = re.compile('codmun=(\d+)')
 
 
 def get_list_items_from(url, id_, encoding='utf-8'):
@@ -29,7 +32,8 @@ def get_states():
     url = BASE_URL + '/xtras/home.php'
     for state in get_list_items_from(url, 'menu_ufs'):
         url = state.a.get('href').replace('..', BASE_URL)
-        yield dict(abbr=state.string, name=state.a.get('title'), url=url)
+        match = RE_CODE_UF.search(url)
+        yield dict(code=match.group(1), abbr=state.string, name=state.a.get('title'), url=url)
 
 
 def get_cities_from_state(state, url):
@@ -38,7 +42,9 @@ def get_cities_from_state(state, url):
     to its state.
     """
     for city in get_list_items_from(url, 'lista_municipios'):
-        yield dict(name=city.string, state=state)
+        city_url = city.a.get('href').replace('..', BASE_URL)
+        match = RE_CODE_CITY.search(city_url)
+        yield dict(code=match.group(1), name=city.string, state=state)
 
 
 def get_cities(states):
@@ -84,12 +90,11 @@ def write_json(name, data, headers=None):
 
 
 if __name__ == '__main__':
-
     states = sorted([state for state in get_states()], key=lambda x: x['name'])
-    state_headers = ('abbr', 'name')
+    state_headers = ('code', 'abbr', 'name')
 
     cities = sorted([c for c in get_cities(states)], key=lambda x: x['name'])
-    city_headers = ('name', 'state')
+    city_headers = ('code', 'name', 'state')
 
     print('\nSaving {} states'.format(len(states)))
     write_csv('states.csv', states, state_headers)
