@@ -27,20 +27,20 @@ $ python3 -m pip install -r requirements.txt
 #### Cities
 
 ```csv
-name,state
-Abadia de Goiás,GO
-Abadia dos Dourados,MG
-Abadiânia,GO
+code,name,state
+520005,Abadia de Goiás,GO
+310010,Abadia dos Dourados,MG
+520010,Abadiânia,GO
 …
 ```
 
 #### States
 
 ```csv
-abbr,name
-AC,Acre
-AL,Alagoas
-AP,Amapá
+code,abbr,name
+12,AC,Acre
+27,AL,Alagoas
+16,AP,Amapá
 …
 ```
 
@@ -52,14 +52,17 @@ AP,Amapá
 [
   {
     "name": "Abadia de Goiás",
+    "code": "520005",
     "state": "GO"
   },
   {
     "name": "Abadia dos Dourados",
+    "code": "310010",
     "state": "MG"
   },
   {
     "name": "Abadiânia",
+    "code": "520010",
     "state": "GO"
   },
   …
@@ -72,15 +75,18 @@ AP,Amapá
 [
   {
     "name": "Acre",
-    "abbr": "AC"
+    "abbr": "AC",
+    "code": "12"
   },
   {
     "name": "Alagoas",
-    "abbr": "AL"
+    "abbr": "AL",
+    "code": "27"
   },
   {
-    "name": "Amap\u00e1",
-    "abbr": "AP"
+    "name": "Amapá",
+    "abbr": "AP",
+    "code": "16"
   },
   …
 ]
