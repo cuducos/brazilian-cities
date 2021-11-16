@@ -1,60 +1,44 @@
 import re
 from csv import DictWriter
-from json import dump
+from json import dump, loads
 from urllib.request import urlopen
 
-from bs4 import BeautifulSoup
 
-BASE_URL = 'http://cidades.ibge.gov.br'
-RE_CODE_UF = re.compile('coduf=(\d+)')
-RE_CODE_CITY = re.compile('codmun=(\d+)')
-
-
-def get_list_items_from(url, id_, encoding='utf-8'):
-    """
-    Generator with <li> elements from a HTML list with `id_` as the ID.
-    :param url: (str) URL to fetch
-    :param id_: (str) ID attribute of a HTML list
-    :return: (generator) with list item BeautifulSoup objects
-    """
-    print('Fetching ' + url)
-    html = BeautifulSoup(urlopen(url).read(), 'html.parser')
-    objs = html.find(id=id_)
-    for obj in objs.find_all('li'):
-        yield obj
+CITIES_URL = "https://servicodados.ibge.gov.br/api/v1/localidades/aniversarios"
+STATES_URL = "https://cidades.ibge.gov.br/dist/main-client.js"
+STATES_MARKER = "exports.ufs ="
 
 
-def get_states():
-    """
-    Generator that returns dictionaries with each state abbreviation, name, and
-    the URL to this state webapage.
-    """
-    url = BASE_URL + '/xtras/home.php'
-    for state in get_list_items_from(url, 'menu_ufs'):
-        url = state.a.get('href').replace('..', BASE_URL)
-        match = RE_CODE_UF.search(url)
-        yield dict(code=match.group(1), abbr=state.string, name=state.a.get('title'), url=url)
+def get_states(url=None):
+    url = url or STATES_URL
+
+    print("Fetching", url)
+    with urlopen(url) as response:
+        content = response.read().decode("utf8")
+
+    start = content.index(STATES_MARKER) + len(STATES_MARKER)
+    end = content.index("]", start) + 1
+    chunk = content[start:end]
+
+    for key in ("codigo", "nome", "slug", "sigla", "codigoCapital"):
+        chunk = chunk.replace(key + ":", '"' + key + '":')
+
+    for dirty in ("\\r", "\\n"):
+        chunk = chunk.replace(dirty, "")
+
+    for uf in loads(chunk):
+        yield {"code": uf["codigo"], "abbr": uf["sigla"], "name": uf["nome"]}
 
 
-def get_cities_from_state(state, url):
-    """
-    Generator that returns dictionaries with the city name and the abbreviation
-    to its state.
-    """
-    for city in get_list_items_from(url, 'lista_municipios'):
-        city_url = city.a.get('href').replace('..', BASE_URL)
-        match = RE_CODE_CITY.search(city_url)
-        yield dict(code=match.group(1), name=city.string, state=state)
+def get_cities(url=None):
+    url = url or CITIES_URL
 
+    print("Fetching", url)
+    with urlopen(url) as response:
+        content = response.read().decode("utf8")
 
-def get_cities(states):
-    """
-    Wrapper for get_cities_from_state().
-    :param states: (iterale) like get_states() generator
-    :return: (generator) of diciotnaries like get_cities_from_state()
-    """
-    for state in states:
-        yield from get_cities_from_state(state['abbr'], state['url'])
+    for obj in loads(content):
+        yield {"code": obj["codigo"], "name": obj["nome"], "state": obj["uf"]}
 
 
 def clean_dict(dictionary, keys):
@@ -68,7 +52,7 @@ def write_csv(name, data, headers):
     :param data: (iterable) with dictionary containing the data to be written
     :param headers: (iterable) with the headers for the CSV file
     """
-    with open(name, 'w', encoding='utf-8') as handler:
+    with open(name, "w", encoding="utf-8") as handler:
         writer = DictWriter(handler, fieldnames=list(headers))
         writer.writeheader()
         for line in data:
@@ -85,23 +69,23 @@ def write_json(name, data, headers=None):
         data = list(clean_dict(d, headers) for d in data)
     else:
         data = list(data)
-    with open(name, 'w', encoding='utf-8') as handler:
+    with open(name, "w", encoding="utf-8") as handler:
         dump(data, handler, ensure_ascii=False)
 
 
-if __name__ == '__main__':
-    states = sorted([state for state in get_states()], key=lambda x: x['name'])
-    state_headers = ('code', 'abbr', 'name')
+if __name__ == "__main__":
+    states = sorted((state for state in get_states()), key=lambda x: x["name"])
+    state_headers = ("code", "abbr", "name")
 
-    cities = sorted([c for c in get_cities(states)], key=lambda x: x['name'])
-    city_headers = ('code', 'name', 'state')
+    print("Saving {} states".format(len(states)))
+    write_csv("states.csv", states, state_headers)
+    write_json("states.json", states, state_headers)
 
-    print('\nSaving {} states'.format(len(states)))
-    write_csv('states.csv', states, state_headers)
-    write_json('states.json', states, state_headers)
+    cities = sorted((c for c in get_cities()), key=lambda x: x["name"])
+    city_headers = ("code", "name", "state")
 
-    print('Saving {} cities'.format(len(cities)))
-    write_csv('cities.csv', cities, city_headers)
-    write_json('cities.json', cities, city_headers)
+    print("Saving {} cities".format(len(cities)))
+    write_csv("cities.csv", cities, city_headers)
+    write_json("cities.json", cities, city_headers)
 
-    print('\nDone!')
+    print("Done!")

@@ -4,21 +4,9 @@ This is a simple script to build a list of Brazilian cities and states from [IBG
 
 ## Usage
 
-Run `$ python3 cities.py` and you'll have 4 new files: `cities.csv`, `cities.json`, `states.csv` and `states.json`.
+This script requires [Python 3.5](https://python.org) or newer, and no external dependencies.
 
-## Installation
-
-This script requires [Python 3.5](https://python.org) and one `pip` installable package. If you have `python3` alreayd available these few lines should get you started: 
-
-```console
-$ git clone https://github.com/cuducos/brazilian-cities
-$ cd brazilian-cities
-$ python3 -m venv brazilian-cities
-$ source brazilian-cities/bin/activate
-$ python3 -m pip install -r requirements.txt
-```
-
-**If you use Windows** replace `source brazilian-cities/bin/activate` by `brazilian-cities\Scripts\activate`.
+Run `$ python cities.py` and you'll have 4 new files: `cities.csv`, `cities.json`, `states.csv` and `states.json`.
 
 ## File formats
 
