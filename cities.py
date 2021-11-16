@@ -1,91 +1,126 @@
-import re
+from abc import ABC, abstractmethod, abstractproperty
+from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from csv import DictWriter
 from json import dump, loads
+from pathlib import Path
 from urllib.request import urlopen
 
 
-CITIES_URL = "https://servicodados.ibge.gov.br/api/v1/localidades/aniversarios"
-STATES_URL = "https://cidades.ibge.gov.br/dist/main-client.js"
 STATES_MARKER = "exports.ufs ="
 
 
-def get_states(url=None):
-    url = url or STATES_URL
+class Scrapper(ABC):
+    @abstractproperty
+    def url(self):
+        ...
 
-    print("Fetching", url)
-    with urlopen(url) as response:
-        content = response.read().decode("utf8")
+    @abstractmethod
+    def __iter__(self):
+        ...
 
-    start = content.index(STATES_MARKER) + len(STATES_MARKER)
-    end = content.index("]", start) + 1
-    chunk = content[start:end]
-
-    for key in ("codigo", "nome", "slug", "sigla", "codigoCapital"):
-        chunk = chunk.replace(key + ":", '"' + key + '":')
-
-    for dirty in ("\\r", "\\n"):
-        chunk = chunk.replace(dirty, "")
-
-    for uf in loads(chunk):
-        yield {"code": uf["codigo"], "abbr": uf["sigla"], "name": uf["nome"]}
+    @contextmanager
+    def __call__(self):
+        print(f"Fetching {self.url}…")
+        response = urlopen(str(self.url))
+        yield response.read().decode("utf8")
 
 
-def get_cities(url=None):
-    url = url or CITIES_URL
+class StatesScrapper(Scrapper):
+    url = "https://cidades.ibge.gov.br/dist/main-client.js"
 
-    print("Fetching", url)
-    with urlopen(url) as response:
-        content = response.read().decode("utf8")
+    @property
+    def states(self):
+        with self() as content:
+            start = content.index(STATES_MARKER) + len(STATES_MARKER)
+            end = content.index("]", start) + 1
+            chunk = content[start:end]
 
-    for obj in loads(content):
-        yield {"code": obj["codigo"], "name": obj["nome"], "state": obj["uf"]}
+        for key in ("codigo", "nome", "slug", "sigla", "codigoCapital"):
+            chunk = chunk.replace(f"{key}:", f'"{key}":')
+
+        for dirty in ("\\r", "\\n"):
+            chunk = chunk.replace(dirty, "")
+
+        return loads(chunk)
+
+    def __iter__(self):
+        yield from (
+            {
+                "code": state["codigo"],
+                "abbr": state["sigla"],
+                "name": state["nome"],
+            }
+            for state in self.states
+        )
 
 
-def clean_dict(dictionary, keys):
-    """Returns a dictionary filtering its keys by the argument `keys`."""
-    return {k: v for k, v in dictionary.items() if k in keys}
+class CitiesScrapper(Scrapper):
+    url = "https://servicodados.ibge.gov.br/api/v1/localidades/aniversarios"
+
+    def __iter__(self):
+        with self() as content:
+            cities = loads(content)
+
+        yield from (
+            {"code": city["codigo"], "name": city["nome"], "state": city["uf"]}
+            for city in cities
+        )
 
 
-def write_csv(name, data, headers):
-    """
-    :param name: (str) CSV file path and name
-    :param data: (iterable) with dictionary containing the data to be written
-    :param headers: (iterable) with the headers for the CSV file
-    """
-    with open(name, "w", encoding="utf-8") as handler:
-        writer = DictWriter(handler, fieldnames=list(headers))
-        writer.writeheader()
-        for line in data:
-            writer.writerow(clean_dict(line, headers))
+class Writer:
+    HEADERS = {
+        "cities": ("code", "name", "state"),
+        "states": ("code", "abbr", "name"),
+    }
+
+    def __init__(self, name, scrapper):
+        self.name = name
+        self.csv_path = Path(f"{name}.csv")
+        self.json_path = Path(f"{name}.json")
+        self.headers = self.HEADERS.get(name, [])
+        self.data = self.sort_data(scrapper)
+
+    def sort_data(self, generator):
+        cleaned = (
+            {key: value for key, value in row.items() if key in self.headers}
+            for row in generator
+        )
+        return sorted(cleaned, key=lambda row: row["name"])
+
+    def csv(self):
+        with self.csv_path.open("w", encoding="utf-8") as handler:
+            writer = DictWriter(handler, fieldnames=self.headers)
+            writer.writeheader()
+            for line in self.data:
+                writer.writerow(line)
+
+    def json(self):
+        with self.json_path.open("w", encoding="utf-8") as handler:
+            dump(self.data, handler, ensure_ascii=False)
+
+    def __call__(self):
+        if self.csv_path.exists():
+            self.csv_path.unlink()
+
+        if self.json_path.exists():
+            self.json_path.unlink()
+
+        print(f"Saving {len(self.data)} {self.name}…")
+        self.csv()
+        self.json()
 
 
-def write_json(name, data, headers=None):
-    """
-    :param name: (str) JSON file path and name
-    :param data: (iterable) with dictionary containing the data to be written
-    :param headers: (iterable) list with keys to keep in the JSON file
-    """
-    if headers:
-        data = list(clean_dict(d, headers) for d in data)
-    else:
-        data = list(data)
-    with open(name, "w", encoding="utf-8") as handler:
-        dump(data, handler, ensure_ascii=False)
+def main(name):
+    scrapper = {"states": StatesScrapper, "cities": CitiesScrapper}.get(name)
+    writer = Writer(name, scrapper())
+    return writer()
 
 
 if __name__ == "__main__":
-    states = sorted((state for state in get_states()), key=lambda x: x["name"])
-    state_headers = ("code", "abbr", "name")
-
-    print("Saving {} states".format(len(states)))
-    write_csv("states.csv", states, state_headers)
-    write_json("states.json", states, state_headers)
-
-    cities = sorted((c for c in get_cities()), key=lambda x: x["name"])
-    city_headers = ("code", "name", "state")
-
-    print("Saving {} cities".format(len(cities)))
-    write_csv("cities.csv", cities, city_headers)
-    write_json("cities.json", cities, city_headers)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = tuple(pool.submit(main, s) for s in ("states", "cities"))
+        for result in as_completed(results):
+            result.result()
 
     print("Done!")
